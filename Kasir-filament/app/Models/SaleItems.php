@@ -5,10 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
-
+use App\Models\Concerns\HasCustomId;
 class SaleItems extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasCustomId;
 
     protected $table = 'sale_items';
     protected $primaryKey = 'id';
@@ -16,7 +16,6 @@ class SaleItems extends Model
     protected $keyType = 'string';
 
     protected $fillable = [
-        'id',
         'sale_id',
         'product_id',
         'qty',
@@ -25,6 +24,11 @@ class SaleItems extends Model
         'discount',
         'line_total',
     ];
+
+    //Override getter
+    protected function getCustomIdPrefix(): string    { return 'INV-PROD'; }
+    protected function getCustomIdPadLength(): int    { return 5; }
+
 
     protected $casts = [
         'qty'       => 'integer',

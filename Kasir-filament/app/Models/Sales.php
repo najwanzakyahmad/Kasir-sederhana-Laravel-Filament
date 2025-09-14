@@ -5,10 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
-
+use App\Models\Concerns\HasCustomId;
 class Sales extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasCustomId;
 
     protected $table = 'sales';
     protected $primaryKey = 'id';
@@ -26,6 +26,10 @@ class Sales extends Model
         'change_due',
         'paid_at',
     ];
+
+    //Override getter
+    protected function getCustomIdPrefix(): string    { return 'INV'; }
+    protected function getCustomIdPadLength(): int    { return 5; }
 
     protected $casts = [
         'subtotal'       => 'decimal:2',

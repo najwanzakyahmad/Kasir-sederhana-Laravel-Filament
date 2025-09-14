@@ -5,12 +5,13 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\Notifiable;
-
+use App\Models\Concerns\HasCustomId;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, SoftDeletes, HasCustomId;
 
     /**
      * The attributes that are mass assignable.
@@ -22,6 +23,10 @@ class User extends Authenticatable
         'email',
         'password',
     ];
+
+    //Override getter
+    protected function getCustomIdPrefix(): string    { return 'CTG'; }
+    protected function getCustomIdPadLength(): int    { return 5; }
 
     /**
      * The attributes that should be hidden for serialization.
