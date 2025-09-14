@@ -4,14 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Products extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'products';
     protected $primaryKey = 'id';
-    public $incrementing = false;
+    public $incrementing = false;   // karena pakai UUID
     protected $keyType = 'string';
 
     protected $fillable = [
@@ -36,7 +37,7 @@ class Products extends Model
     ];
 
     /**
-     * Relasi ke Category (satu product milik satu kategori).
+     * Relasi ke Category (satu produk milik satu kategori).
      */
     public function category()
     {
@@ -44,7 +45,7 @@ class Products extends Model
     }
 
     /**
-     * Relasi ke SaleItem (satu product bisa ada di banyak item penjualan).
+     * Relasi ke SaleItem (satu produk bisa muncul di banyak item penjualan).
      */
     public function saleItems()
     {

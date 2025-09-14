@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class SaleItems extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'sale_items';
     protected $primaryKey = 'id';
@@ -26,24 +27,16 @@ class SaleItems extends Model
     ];
 
     protected $casts = [
-        'qty'        => 'integer',
-        'price'      => 'decimal:2',
-        'tax_rate'   => 'decimal:2',
-        'discount'   => 'decimal:2',
-        'line_total' => 'decimal:2',
+        'qty'       => 'integer',
+        'price'     => 'decimal:2',
+        'tax_rate'  => 'decimal:2',
+        'discount'  => 'decimal:2',
+        'line_total'=> 'decimal:2',
     ];
-
-    /**
-     * Relasi ke Sale (banyak item milik satu sale).
-     */
     public function sale()
     {
         return $this->belongsTo(Sales::class, 'sale_id');
     }
-
-    /**
-     * Relasi ke Product (satu item merujuk satu product).
-     */
     public function product()
     {
         return $this->belongsTo(Products::class, 'product_id');

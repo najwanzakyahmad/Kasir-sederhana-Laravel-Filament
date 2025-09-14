@@ -4,19 +4,19 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Sales extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'sales';
     protected $primaryKey = 'id';
-    public $incrementing = false; // karena pakai UUID
+    public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
         'id',
-        'sale_id',
         'status',
         'subtotal',
         'discount_total',
@@ -36,4 +36,12 @@ class Sales extends Model
         'change_due'     => 'decimal:2',
         'paid_at'        => 'date',
     ];
+
+    /**
+     * Relasi ke SaleItem (satu sale bisa punya banyak item).
+     */
+    public function items()
+    {
+        return $this->hasMany(SaleItems::class, 'sale_id');
+    }
 }

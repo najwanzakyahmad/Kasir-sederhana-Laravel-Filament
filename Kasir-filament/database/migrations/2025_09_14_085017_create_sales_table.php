@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::create('sales', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->uuid('sale_id');
             $table->string('status');
             $table->decimal('subtotal');
             $table->decimal('discount_total');
@@ -22,6 +21,7 @@ return new class extends Migration
             $table->decimal('paid_total');
             $table->decimal('change_due');
             $table->date('paid_at');
+            $table->softDeletes();
         });
     }
 
