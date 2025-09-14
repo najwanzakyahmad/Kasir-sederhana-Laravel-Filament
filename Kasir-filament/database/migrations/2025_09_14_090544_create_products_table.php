@@ -12,10 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('products', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+            $table->string('id')->primary();
 
             // definisi kolom foreign key dulu
-            $table->uuid('category_id');
+            $table->string('category_id');
 
             $table->longText('barcode');
             $table->string('name');
