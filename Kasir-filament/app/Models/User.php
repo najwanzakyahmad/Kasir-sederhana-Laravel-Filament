@@ -25,7 +25,7 @@ class User extends Authenticatable
     ];
 
     //Override getter
-    protected function getCustomIdPrefix(): string    { return 'CTG'; }
+    protected function getCustomIdPrefix(): string    { return 'USER'; }
     protected function getCustomIdPadLength(): int    { return 5; }
 
     /**

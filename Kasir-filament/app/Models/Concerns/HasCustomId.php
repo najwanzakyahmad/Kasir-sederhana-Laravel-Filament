@@ -3,60 +3,53 @@
 
 namespace App\Models\Concerns;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 trait HasCustomId
 {
-    // Konfigurasi default (bisa dioverride per-model)
     protected static string $customIdField      = 'id';
-    protected static string $customIdPrefix     = '';     // contoh: 'CTG', 'PROD', 'USER'
+    protected static string $customIdPrefix     = '';
     protected static string $customIdSeparator  = '-';
-    protected static int    $customIdPadLength  = 5;      // contoh: 00001
+    protected static int    $customIdPadLength  = 5;
     protected static string $customIdPadChar    = '0';
 
     protected static function bootHasCustomId(): void
     {
-        static::creating(function ($model) {
+        static::creating(function (Model $model) {
             $field = $model->getCustomIdField();
 
-            // Jika sudah diisi manual, skip
             if (!empty($model->{$field})) {
-                return;
+                return; // sudah diisi manual
             }
 
-            $prefix    = $model->getCustomIdPrefix();
-            $sep       = $model->getCustomIdSeparator();
-            $padLen    = $model->getCustomIdPadLength();
-            $padChar   = $model->getCustomIdPadChar();
+            $prefix  = $model->getCustomIdPrefix();
+            $sep     = $model->getCustomIdSeparator();
+            $padLen  = $model->getCustomIdPadLength();
+            $padChar = $model->getCustomIdPadChar();
+
+            $like = $prefix !== '' ? "{$prefix}{$sep}%" : '%';
 
             $query = $model->newQuery();
 
-            // Jika model pakai SoftDeletes, sertakan trashed agar urutan tetap berlanjut
+            // Sertakan soft-deleted bila model gunakan SoftDeletes
             if (in_array(SoftDeletes::class, class_uses_recursive($model))) {
                 $query->withTrashed();
             }
 
-            // Ambil ID terakhir sesuai prefix (contoh: CTG-xxxxx)
-            $like = $prefix !== '' ? $prefix . $sep . '%' : '%';
-            $lastId = $query
+            // Ambil MAX angka suffix secara numerik, bukan "last row" string
+            $maxNum = (int) $query
                 ->where($field, 'like', $like)
-                ->orderBy($field, 'desc')
-                ->value($field);
+                ->max(DB::raw("CAST(SUBSTRING_INDEX($field, '{$sep}', -1) AS UNSIGNED)"));
 
-            $nextNumber = 1;
-            if ($lastId) {
-                // Ambil angka di belakang prefix+separator
-                $pattern = '/^' . preg_quote($prefix . $sep, '/') . '/';
-                $numberPart = (int) preg_replace($pattern, '', $lastId);
-                $nextNumber = $numberPart + 1;
-            }
+            $next = $maxNum + 1;
 
-            $model->{$field} = ($prefix ? ($prefix . $sep) : '')
-                . str_pad((string) $nextNumber, $padLen, $padChar, STR_PAD_LEFT);
+            $model->{$field} = ($prefix !== '' ? "{$prefix}{$sep}" : '')
+                . str_pad((string) $next, $padLen, $padChar, STR_PAD_LEFT);
         });
     }
 
-    // Getter yang bisa dioverride per-model jika perlu lebih fleksibel
     protected function getCustomIdField(): string     { return static::$customIdField; }
     protected function getCustomIdPrefix(): string    { return static::$customIdPrefix; }
     protected function getCustomIdSeparator(): string { return static::$customIdSeparator; }
