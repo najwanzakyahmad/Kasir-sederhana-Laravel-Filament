@@ -8,6 +8,9 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Actions\EditAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\RestoreAction;
+use Filament\Actions\ForceDeleteAction;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -25,6 +28,12 @@ class ProductsTable
                     ->sortable()
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
+
+                TextColumn::make('category.name')
+                    ->label('Category')
+                    ->sortable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 TextColumn::make('name')
                     ->label('Product Name')
@@ -45,6 +54,7 @@ class ProductsTable
 
                 TextColumn::make('sell_price')
                     ->label('Sell Price')
+                    ->sortable()
                     ->money('idr', true)
                     ->toggleable(isToggledHiddenByDefault: false),
 
@@ -77,7 +87,24 @@ class ProductsTable
                 TrashedFilter::make(),
             ])
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()
+                    ->iconButton()
+                    ->tooltip('Edit'),
+                DeleteAction::make()
+                    ->iconButton()
+                    ->tooltip('Delete')
+                    ->requiresConfirmation(),
+                RestoreAction::make()
+                    ->label('')
+                    ->iconButton()
+                    ->tooltip('Restore')
+                    ->visible(fn ($record) => $record->trashed()),
+                ForceDeleteAction::make()
+                    ->label('')
+                    ->iconButton()
+                    ->tooltip('Delete Permanently')
+                    ->requiresConfirmation()
+                    ->visible(fn ($record) => $record->trashed()),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
