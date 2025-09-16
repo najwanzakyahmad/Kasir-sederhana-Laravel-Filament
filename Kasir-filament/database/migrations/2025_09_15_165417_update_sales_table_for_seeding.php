@@ -11,7 +11,7 @@ return new class extends Migration {
             // Lebarkan precision nominal
             $table->decimal('subtotal', 15, 2)->change();
             $table->decimal('discount_total', 15, 2)->change();
-            $table->decimal('tax_total', 15, 2)->change();
+            $table->decimal('tax_total', 15, places: 2)->change();
             $table->decimal('grand_total', 15, 2)->change();
             $table->decimal('paid_total', 15, 2)->change();
             $table->decimal('change_due', 15, 2)->change();

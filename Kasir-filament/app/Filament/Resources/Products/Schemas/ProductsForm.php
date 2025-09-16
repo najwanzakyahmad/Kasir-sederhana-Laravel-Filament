@@ -34,7 +34,9 @@ class ProductsForm
                 FileUpload::make('image')
                     ->label('Product Image')
                     ->image()
+                    ->disk('public')
                     ->directory('products')
+                    ->visibility('public')  
                     ->required(),
 
                 TextInput::make('sell_price')

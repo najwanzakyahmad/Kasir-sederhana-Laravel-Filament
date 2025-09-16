@@ -49,7 +49,9 @@ class ProductsTable
 
                 ImageColumn::make('image')
                     ->label('Image')
+                    ->disk('public')
                     ->square()
+                    ->visibility('public')
                     ->toggleable(isToggledHiddenByDefault: false),
 
                 TextColumn::make('sell_price')
