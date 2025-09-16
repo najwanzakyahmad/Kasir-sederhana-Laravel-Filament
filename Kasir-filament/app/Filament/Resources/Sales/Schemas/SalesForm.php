@@ -4,23 +4,35 @@ namespace App\Filament\Resources\Sales\Schemas;
 
 use Filament\Schemas\Schema;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Image;
+
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Forms\Components\Placeholder;
-use Filament\Schemas\Components\Grid;
+
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
-use Illuminate\Support\HtmlString;
+
+use App\Forms\Components\IdrInput;
 use App\Models\Products;
 
 class SalesForm
 {
     public static function configure(Schema $schema): Schema
     {
-        // Hitung total dari ROOT (dipanggil saat array items berubah / paid_total berubah)
-        $recalcTotalsRoot = function (Get $get, Set $set): void {
+        // 1) BENERIN NAMA HELPER
+        $toNumber = function ($v): float {
+            if ($v === null || $v === '') return 0.0;
+            $digits = preg_replace('/\D+/', '', (string) $v);
+
+            return $digits === '' ? 0.0 : (float) $digits;
+        };
+
+        // 2) IMPORT HELPER KE DALAM CLOSURE DENGAN use ($toNumber)
+        $recalcTotalsRoot = function (Get $get, Set $set) use ($toNumber): void {
             $items = $get('items') ?? [];
 
             $subtotal = 0.0;
@@ -29,10 +41,10 @@ class SalesForm
             $grandTotal = 0.0;
 
             foreach ($items as $row) {
-                $qty      = (int)   ($row['qty'] ?? 0);
-                $price    = (float) ($row['price'] ?? 0);
-                $discount = (float) ($row['discount'] ?? 0);
-                $taxRate  = (float) ($row['tax_rate'] ?? 0);
+                $qty      = (int)   $toNumber($row['qty'] ?? 0);
+                $price    =         $toNumber($row['price'] ?? 0);
+                $discount =         $toNumber($row['discount'] ?? 0);
+                $taxRate  =         $toNumber($row['tax_rate'] ?? 0);
 
                 $base      = max($qty * $price, 0);
                 $afterDisc = max($base - $discount, 0);
@@ -50,16 +62,17 @@ class SalesForm
             $set('tax_total', round($taxTotal, 2));
             $set('grand_total', round($grandTotal, 2));
 
-            $paid = (float) ($get('paid_total') ?? 0);
+            // pakai helper juga biar "6.500" ga kebaca 6.5
+            $paid = $toNumber($get('paid_total') ?? 0);
             $set('change_due', round($paid - $grandTotal, 2));
         };
 
-        // Hitung ulang dari DALAM item (pakai path relatif "../../")
-        $recalcFromInsideItem = function (Get $get, Set $set): void {
-            $qty      = (int)   ($get('qty') ?? 0);
-            $price    = (float) ($get('price') ?? 0);
-            $discount = (float) ($get('discount') ?? 0);
-            $taxRate  = (float) ($get('tax_rate') ?? 0);
+        // 3) IMPORT HELPER DI CLOSURE SATU LAGI
+        $recalcFromInsideItem = function (Get $get, Set $set) use ($toNumber): void {
+            $qty      = (int)   $toNumber($get('qty') ?? 0);
+            $price    =         $toNumber($get('price') ?? 0);
+            $discount =         $toNumber($get('discount') ?? 0);
+            $taxRate  =         $toNumber($get('tax_rate') ?? 0);
 
             $base      = max($qty * $price, 0);
             $afterDisc = max($base - $discount, 0);
@@ -68,18 +81,15 @@ class SalesForm
 
             $set('line_total', round($line, 2));
 
+            // Recalc total dari seluruh items (sanitize juga)
             $items = $get('../../items') ?? [];
-
-            $subtotal = 0.0;
-            $discountTotal = 0.0;
-            $taxTotal = 0.0;
-            $grandTotal = 0.0;
+            $subtotal = $discountTotal = $taxTotal = $grandTotal = 0.0;
 
             foreach ($items as $row) {
-                $q  = (int)   ($row['qty'] ?? 0);
-                $pr = (float) ($row['price'] ?? 0);
-                $dc = (float) ($row['discount'] ?? 0);
-                $tr = (float) ($row['tax_rate'] ?? 0);
+                $q  = (int)   $toNumber($row['qty'] ?? 0);
+                $pr =         $toNumber($row['price'] ?? 0);
+                $dc =         $toNumber($row['discount'] ?? 0);
+                $tr =         $toNumber($row['tax_rate'] ?? 0);
 
                 $b  = max($q * $pr, 0);
                 $ad = max($b - $dc, 0);
@@ -97,7 +107,7 @@ class SalesForm
             $set('../../tax_total', round($taxTotal, 2));
             $set('../../grand_total', round($grandTotal, 2));
 
-            $paid = (float) ($get('../../paid_total') ?? 0);
+            $paid = $toNumber($get('../../paid_total') ?? 0);
             $set('../../change_due', round($paid - $grandTotal, 2));
         };
 
@@ -112,35 +122,36 @@ class SalesForm
                         ->defaultItems(1)
                         ->reorderable(false)
                         ->collapsed()
+                        ->itemLabel(function (array $state): ?string {
+                            if (blank($state['product_id'] ?? null)) return '';
+                            return Products::find($state['product_id'])?->name ?: 'Item';
+                        })
                         ->live()
                         ->afterStateUpdated(function (Get $get, Set $set, ?array $state) use ($recalcTotalsRoot) {
                             $recalcTotalsRoot($get, $set);
                         })
                         ->schema([
-                            // === Baris 1: Gambar vs Produk (rasio 1:4) ===
+                            // Baris 1: Preview (1) vs Produk (4) — rasio 1:4
                             Grid::make(5)
                                 ->columnSpanFull()
                                 ->schema([
-                                    // Gambar (1/5)
-                                    Placeholder::make('product_preview')
-                                        ->label(' ')
+                                    Grid::make(1)
                                         ->columnSpan(1)
-                                        ->content(function (Get $get) {
-                                            $productId = $get('product_id');
-                                            if (! $productId) return '';
-                                            $p = Products::find($productId);
-                                            if (! $p || ! $p->image) return '';
-                                            $url = asset('storage/' . ltrim($p->image, '/'));
-                                            // FIXED size 80x80, tetap rapi dengan object-fit
-                                            return new HtmlString(
-                                                '<div style="display:flex;align-items:center;justify-content:center;width:100%;">' .
-                                                    '<img src="' . e($url) . '" alt="preview" ' .
-                                                    'style="width:80px;height:80px;object-fit:cover;border-radius:12px;display:block;" />' .
-                                                '</div>'
-                                            );
-                                        }),
+                                        ->schema([
+                                            Text::make('Preview')
+                                                ->color('neutral')
+                                                ->extraAttributes(['class' => 'text-center mb-2']),
+                                            Image::make(
+                                                url: fn (Get $get) => ($id = $get('product_id')) && ($img = Products::find($id)?->image)
+                                                    ? asset('storage/' . ltrim($img, '/'))
+                                                    : 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', // 1x1 transparan
+                                                alt: 'Preview',
+                                            )
+                                                ->imageWidth('80px')
+                                                ->imageHeight('80px')
+                                                ->alignCenter(),
+                                        ]),
 
-                                    // Select Produk (4/5)
                                     Select::make('product_id')
                                         ->label('Produk')
                                         ->native(false)
@@ -176,79 +187,98 @@ class SalesForm
                                         }),
                                 ]),
 
-                            // === Baris 2 dst: field angka dalam grid 12 kolom ===
-                            Grid::make(12)
-                                ->columnSpanFull()
-                                ->schema([
-                                    TextInput::make('qty')
-                                        ->label('Qty')
-                                        ->numeric()
-                                        ->default(1)
-                                        ->minValue(1)
-                                        ->required()
-                                        ->columnSpan(2)
-                                        ->extraAttributes(['class' => 'w-full'])
-                                        ->rule(function (Get $get) {
-                                            return function (string $attribute, $value, \Closure $fail) use ($get) {
-                                                $productId = $get('product_id');
-                                                if (! $productId) return;
-                                                $stock = (int) (Products::find($productId)?->qty_on_hand ?? 0);
-                                                if ((int) $value > $stock) {
-                                                    $fail("Stok tersisa {$stock}.");
-                                                }
-                                            };
-                                        })
-                                        ->live()
-                                        ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
+                            // Baris 2+: input angka
+                            TextInput::make('qty')
+                                ->label('Qty')
+                                ->numeric()
+                                ->default(1)
+                                ->minValue(1)
+                                ->required()
+                                ->columnSpan(1)
+                                ->extraAttributes(['class' => 'w-full'])
+                                ->rule(function (Get $get) {
+                                    return function (string $attribute, $value, \Closure $fail) use ($get) {
+                                        $productId = $get('product_id');
+                                        if (! $productId) return;
+                                        $stock = (int) (Products::find($productId)?->qty_on_hand ?? 0);
+                                        if ((int) $value > $stock) {
+                                            $fail("Stok tersisa {$stock}.");
+                                        }
+                                    };
+                                })
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
 
-                                    TextInput::make('price')
-                                        ->label('Harga')
-                                        ->numeric()
-                                        ->prefix('Rp')
-                                        ->required()
-                                        ->columnSpan(3)
-                                        ->extraAttributes(['class' => 'w-full'])
-                                        ->live()
-                                        ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
+                            IdrInput::make('price')
+                                ->label('Harga')
+                                ->required()
+                                ->columnSpan(1)
+                                ->extraAttributes(['class' => 'w-full'])
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
 
-                                    TextInput::make('discount')
-                                        ->label('Diskon')
-                                        ->numeric()
-                                        ->prefix('Rp')
-                                        ->nullable() // boleh kosong (NULL)
-                                        ->columnSpan(3)
-                                        ->extraAttributes(['class' => 'w-full'])
-                                        ->live()
-                                        ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
+                            IdrInput::make('discount')
+                                ->label('Diskon')
+                                ->default(0)
+                                // kosong => 0, selain itu parse angka
+                                ->dehydrateStateUsing(function ($state) {
+                                    if ($state === null || $state === '') return 0;
+                                    return (float) preg_replace('/\D/', '', (string) $state);
+                                })
+                                ->columnSpan(1)
+                                ->extraAttributes(['class' => 'w-full'])
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
 
-                                    TextInput::make('tax_rate')
-                                        ->label('Pajak (%)')
-                                        ->numeric()
-                                        ->default(0)
-                                        ->columnSpan(2)
-                                        ->extraAttributes(['class' => 'w-full'])
-                                        ->live()
-                                        ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
+                            TextInput::make('tax_rate')
+                                ->label('Pajak (%)')
+                                ->numeric()
+                                ->default(0)
+                                ->columnSpan(1)
+                                ->extraAttributes(['class' => 'w-full'])
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
 
-                                    TextInput::make('line_total')
-                                        ->label('Total Baris')
-                                        ->numeric()
-                                        ->prefix('Rp')
-                                        ->disabled()
-                                        ->dehydrated()
-                                        ->columnSpan(2)
-                                        ->extraAttributes(['class' => 'w-full']),
-                                ]),
+                            TextInput::make('line_total')
+                                ->label('Total Baris')
+                                ->disabled()
+                                ->dehydrated()
+                                ->columnSpan(1)
+                                ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.'))
+                                ->extraAttributes(['class' => 'w-full']),
                         ]),
                 ]),
 
             Section::make('Ringkasan & Pembayaran')
-                ->columns(12)
+                ->columns(2)
                 ->schema([
-                    TextInput::make('subtotal')->label('Subtotal')->numeric()->prefix('Rp')->disabled()->dehydrated()->columnSpan(3),
-                    TextInput::make('discount_total')->label('Total Diskon')->numeric()->prefix('Rp')->disabled()->dehydrated()->columnSpan(3),
-                    TextInput::make('tax_total')->label('Total Pajak')->numeric()->prefix('Rp')->disabled()->dehydrated()->columnSpan(3),
-                    TextInput::make('grand_total')->label('Grand Total')->numeric()->prefix('Rp')->disabled()->dehydrated()->columnSpan(3),
+                    TextInput::make('subtotal')
+                        ->label('Subtotal')
+                        ->disabled()
+                        ->dehydrated()
+                        ->columnSpan(1)
+                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
+
+                    TextInput::make('discount_total')
+                        ->label('Total Diskon')
+                        ->disabled()
+                        ->dehydrated()
+                        ->columnSpan(1)
+                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
+
+                    TextInput::make('tax_total')
+                        ->label('Total Pajak')
+                        ->disabled()
+                        ->dehydrated()
+                        ->columnSpan(1)
+                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
+
+                    TextInput::make('grand_total')
+                        ->label('Grand Total')
+                        ->disabled()
+                        ->dehydrated()
+                        ->columnSpan(1)
+                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
 
                     Select::make('status')
                         ->label('Status')
@@ -256,20 +286,37 @@ class SalesForm
                         ->default('paid')
                         ->native(false)
                         ->required()
-                        ->columnSpan(3),
+                        ->columnSpan(1),
 
-                    TextInput::make('paid_total')
+                    IdrInput::make('paid_total')
                         ->label('Dibayar')
-                        ->numeric()
-                        ->prefix('Rp')
                         ->default(0)
-                        ->live()
-                        ->afterStateUpdated(fn (Get $get, Set $set) => $recalcTotalsRoot($get, $set))
-                        ->columnSpan(3),
+                        ->live() // boleh live realtime
+                        ->afterStateUpdated(function (Get $get, Set $set, $state) use ($recalcTotalsRoot) {
+                            // cukup hitung ulang saja, JANGAN auto-set ke grand total
+                            $recalcTotalsRoot($get, $set);
+                        })
+                        ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get, $toNumber) {
+                            $gt   = (float) ($get('grand_total') ?? 0);
+                            $paid = $toNumber($value ?? 0);
+                            if ($paid < $gt) {
+                                $fail('Pembayaran (Dibayar) harus ≥ Grand Total (Rp '.number_format($gt, 0, ',', '.').').');
+                            }
+                        })
+                        ->helperText('Tidak boleh kurang dari Grand Total')
+                        ->columnSpan(1),
 
-                    TextInput::make('change_due')->label('Kembalian')->numeric()->prefix('Rp')->disabled()->dehydrated()->columnSpan(3),
+                    TextInput::make('change_due')
+                        ->label('Kembalian')
+                        ->disabled()
+                        ->dehydrated()
+                        ->columnSpan(1)
+                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
 
-                    Toggle::make('auto_set_paid_at')->label('Isi tanggal bayar saat Status = Paid')->default(true)->columnSpan(3),
+                    Toggle::make('auto_set_paid_at')
+                        ->label('Isi tanggal bayar saat Status = Paid')
+                        ->default(true)
+                        ->columnSpan(1),
                 ]),
         ]);
     }
