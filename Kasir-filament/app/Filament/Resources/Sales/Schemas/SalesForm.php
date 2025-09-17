@@ -12,6 +12,7 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Hidden;
 
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -23,15 +24,29 @@ class SalesForm
 {
     public static function configure(Schema $schema): Schema
     {
-        // 1) BENERIN NAMA HELPER
+        // Helper parser "id-ID" -> float
         $toNumber = function ($v): float {
             if ($v === null || $v === '') return 0.0;
-            $digits = preg_replace('/\D+/', '', (string) $v);
 
-            return $digits === '' ? 0.0 : (float) $digits;
+            // Buang label & spasi (termasuk non-breaking space)
+            $s = str_replace(['Rp', ' ', "\xC2\xA0"], '', (string) $v);
+
+            // 80.000,00 -> 80000,00 -> 80000.00
+            $s = str_replace('.', '', $s);
+            $s = str_replace(',', '.', $s);
+
+            // Sisakan digit + satu titik desimal
+            $s = preg_replace('/[^0-9.]/', '', $s);
+            $parts = explode('.', $s);
+            if (count($parts) > 2) $s = $parts[0] . '.' . $parts[1];
+
+            return (float) $s;
         };
 
-        // 2) IMPORT HELPER KE DALAM CLOSURE DENGAN use ($toNumber)
+        // Formatter tampilan Rp
+        $fmt = fn ($v) => 'Rp ' . number_format((float) $v, 2, ',', '.');
+
+        // Hitung ulang dari root
         $recalcTotalsRoot = function (Get $get, Set $set) use ($toNumber): void {
             $items = $get('items') ?? [];
 
@@ -62,12 +77,11 @@ class SalesForm
             $set('tax_total', round($taxTotal, 2));
             $set('grand_total', round($grandTotal, 2));
 
-            // pakai helper juga biar "6.500" ga kebaca 6.5
             $paid = $toNumber($get('paid_total') ?? 0);
             $set('change_due', round($paid - $grandTotal, 2));
         };
 
-        // 3) IMPORT HELPER DI CLOSURE SATU LAGI
+        // Hitung ulang dari dalam repeater item
         $recalcFromInsideItem = function (Get $get, Set $set) use ($toNumber): void {
             $qty      = (int)   $toNumber($get('qty') ?? 0);
             $price    =         $toNumber($get('price') ?? 0);
@@ -81,7 +95,7 @@ class SalesForm
 
             $set('line_total', round($line, 2));
 
-            // Recalc total dari seluruh items (sanitize juga)
+            // Recalc total dari seluruh items
             $items = $get('../../items') ?? [];
             $subtotal = $discountTotal = $taxTotal = $grandTotal = 0.0;
 
@@ -131,14 +145,15 @@ class SalesForm
                             $recalcTotalsRoot($get, $set);
                         })
                         ->schema([
-                            // Baris 1: Preview (1) vs Produk (4) — rasio 1:4
+                            // Baris 1: Preview (1) vs Produk (4)
                             Grid::make(5)
                                 ->columnSpanFull()
                                 ->schema([
                                     Grid::make(1)
                                         ->columnSpan(1)
                                         ->schema([
-                                            Text::make('Preview')
+                                            Text::make('preview_label')
+                                                ->content('Preview')
                                                 ->color('neutral')
                                                 ->extraAttributes(['class' => 'text-center mb-2']),
                                             Image::make(
@@ -220,11 +235,6 @@ class SalesForm
                             IdrInput::make('discount')
                                 ->label('Diskon')
                                 ->default(0)
-                                // kosong => 0, selain itu parse angka
-                                ->dehydrateStateUsing(function ($state) {
-                                    if ($state === null || $state === '') return 0;
-                                    return (float) preg_replace('/\D/', '', (string) $state);
-                                })
                                 ->columnSpan(1)
                                 ->extraAttributes(['class' => 'w-full'])
                                 ->live(onBlur: true)
@@ -239,46 +249,59 @@ class SalesForm
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
 
-                            TextInput::make('line_total')
-                                ->label('Total Baris')
-                                ->disabled()
-                                ->dehydrated()
+                            // === DISPLAY line_total (IDR) + simpan hidden ===
+                            Grid::make(1)
                                 ->columnSpan(1)
-                                ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.'))
-                                ->extraAttributes(['class' => 'w-full']),
+                                ->schema([
+                                    Text::make('line_total_label')
+                                        ->content('Total Baris')
+                                        ->color('neutral'),
+                                    Text::make('line_total_display')
+                                        ->content(fn (Get $get) => $fmt($get('line_total') ?? 0))
+                                        ->extraAttributes(['class' => 'w-full']),
+                                    Hidden::make('line_total')->dehydrated(),
+                                ]),
                         ]),
                 ]),
 
             Section::make('Ringkasan & Pembayaran')
                 ->columns(2)
                 ->schema([
-                    TextInput::make('subtotal')
-                        ->label('Subtotal')
-                        ->disabled()
-                        ->dehydrated()
+                    // === DISPLAY subtotal + save hidden ===
+                    Grid::make(1)
                         ->columnSpan(1)
-                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
+                        ->schema([
+                            Text::make('subtotal_label')->content('Subtotal')->color('neutral'),
+                            Text::make('subtotal_display')->content(fn (Get $get) => $fmt($get('subtotal') ?? 0)),
+                            Hidden::make('subtotal')->dehydrated(),
+                        ]),
 
-                    TextInput::make('discount_total')
-                        ->label('Total Diskon')
-                        ->disabled()
-                        ->dehydrated()
+                    // === DISPLAY discount_total + save hidden ===
+                    Grid::make(1)
                         ->columnSpan(1)
-                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
+                        ->schema([
+                            Text::make('discount_total_label')->content('Total Diskon')->color('neutral'),
+                            Text::make('discount_total_display')->content(fn (Get $get) => $fmt($get('discount_total') ?? 0)),
+                            Hidden::make('discount_total')->dehydrated(),
+                        ]),
 
-                    TextInput::make('tax_total')
-                        ->label('Total Pajak')
-                        ->disabled()
-                        ->dehydrated()
+                    // === DISPLAY tax_total + save hidden ===
+                    Grid::make(1)
                         ->columnSpan(1)
-                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
+                        ->schema([
+                            Text::make('tax_total_label')->content('Total Pajak')->color('neutral'),
+                            Text::make('tax_total_display')->content(fn (Get $get) => $fmt($get('tax_total') ?? 0)),
+                            Hidden::make('tax_total')->dehydrated(),
+                        ]),
 
-                    TextInput::make('grand_total')
-                        ->label('Grand Total')
-                        ->disabled()
-                        ->dehydrated()
+                    // === DISPLAY grand_total + save hidden ===
+                    Grid::make(1)
                         ->columnSpan(1)
-                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
+                        ->schema([
+                            Text::make('grand_total_label')->content('Grand Total')->color('neutral'),
+                            Text::make('grand_total_display')->content(fn (Get $get) => $fmt($get('grand_total') ?? 0)),
+                            Hidden::make('grand_total')->dehydrated(),
+                        ]),
 
                     Select::make('status')
                         ->label('Status')
@@ -291,9 +314,8 @@ class SalesForm
                     IdrInput::make('paid_total')
                         ->label('Dibayar')
                         ->default(0)
-                        ->live() // boleh live realtime
+                        ->live(onBlur:true)
                         ->afterStateUpdated(function (Get $get, Set $set, $state) use ($recalcTotalsRoot) {
-                            // cukup hitung ulang saja, JANGAN auto-set ke grand total
                             $recalcTotalsRoot($get, $set);
                         })
                         ->rule(fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get, $toNumber) {
@@ -306,17 +328,14 @@ class SalesForm
                         ->helperText('Tidak boleh kurang dari Grand Total')
                         ->columnSpan(1),
 
-                    TextInput::make('change_due')
-                        ->label('Kembalian')
-                        ->disabled()
-                        ->dehydrated()
+                    // === DISPLAY change_due + save hidden ===
+                    Grid::make(1)
                         ->columnSpan(1)
-                        ->formatStateUsing(fn ($v) => $v === null ? null : 'Rp ' . number_format((float) $v, 0, ',', '.')),
-
-                    Toggle::make('auto_set_paid_at')
-                        ->label('Isi tanggal bayar saat Status = Paid')
-                        ->default(true)
-                        ->columnSpan(1),
+                        ->schema([
+                            Text::make('change_due_label')->content('Kembalian')->color('neutral'),
+                            Text::make('change_due_display')->content(fn (Get $get) => $fmt($get('change_due') ?? 0)),
+                            Hidden::make('change_due')->dehydrated(),
+                        ]),
                 ]),
         ]);
     }
