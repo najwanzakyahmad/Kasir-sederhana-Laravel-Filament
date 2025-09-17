@@ -11,7 +11,6 @@ use Filament\Schemas\Components\Image;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\Hidden;
 
 use Filament\Schemas\Components\Utilities\Get;
@@ -24,22 +23,31 @@ class SalesForm
 {
     public static function configure(Schema $schema): Schema
     {
-        // Helper parser "id-ID" -> float
+        // Helper: normalisasi nilai id (scalar) dari kemungkinan array state
+        $normId = function ($v) {
+            if (is_array($v)) {
+                if (array_key_exists('id', $v)) {
+                    return $v['id'];
+                }
+                foreach ($v as $vv) {
+                    if (is_scalar($vv)) {
+                        return $vv;
+                    }
+                }
+                return null;
+            }
+            return $v;
+        };
+
+        // Parser "id-ID" -> float
         $toNumber = function ($v): float {
             if ($v === null || $v === '') return 0.0;
-
-            // Buang label & spasi (termasuk non-breaking space)
             $s = str_replace(['Rp', ' ', "\xC2\xA0"], '', (string) $v);
-
-            // 80.000,00 -> 80000,00 -> 80000.00
             $s = str_replace('.', '', $s);
             $s = str_replace(',', '.', $s);
-
-            // Sisakan digit + satu titik desimal
             $s = preg_replace('/[^0-9.]/', '', $s);
             $parts = explode('.', $s);
             if (count($parts) > 2) $s = $parts[0] . '.' . $parts[1];
-
             return (float) $s;
         };
 
@@ -136,9 +144,10 @@ class SalesForm
                         ->defaultItems(1)
                         ->reorderable(false)
                         ->collapsed()
-                        ->itemLabel(function (array $state): ?string {
-                            if (blank($state['product_id'] ?? null)) return '';
-                            return Products::find($state['product_id'])?->name ?: 'Item';
+                        ->itemLabel(function (array $state) use ($normId): ?string {
+                            $id = $normId($state['product_id'] ?? null);
+                            if (blank($id)) return '';
+                            return Products::find($id)?->name ?: 'Item';
                         })
                         ->live()
                         ->afterStateUpdated(function (Get $get, Set $set, ?array $state) use ($recalcTotalsRoot) {
@@ -157,9 +166,11 @@ class SalesForm
                                                 ->color('neutral')
                                                 ->extraAttributes(['class' => 'text-center mb-2']),
                                             Image::make(
-                                                url: fn (Get $get) => ($id = $get('product_id')) && ($img = Products::find($id)?->image)
-                                                    ? asset('storage/' . ltrim($img, '/'))
-                                                    : 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', // 1x1 transparan
+                                                url: fn (Get $get) =>
+                                                    ($id = $normId($get('product_id'))) &&
+                                                    ($img = Products::find($id)?->image)
+                                                        ? asset('storage/' . ltrim($img, '/'))
+                                                        : 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
                                                 alt: 'Preview',
                                             )
                                                 ->imageWidth('80px')
@@ -186,18 +197,26 @@ class SalesForm
                                                 ->pluck('name', 'id')
                                                 ->toArray();
                                         })
-                                        ->getOptionLabelUsing(fn ($value) => $value ? optional(Products::find($value))->name : null)
+                                        ->getOptionLabelUsing(function ($value) use ($normId) {
+                                            $id = $normId($value);
+                                            return $id ? optional(Products::find($id))->name : null;
+                                        })
                                         ->live()
-                                        ->afterStateUpdated(function (Get $get, Set $set, $state) use ($recalcFromInsideItem) {
-                                            if (! $state) return;
-                                            $p = Products::find($state);
+                                        ->afterStateUpdated(function (Get $get, Set $set, $state) use ($recalcFromInsideItem, $normId) {
+                                            $id = $normId($state);
+                                            if (! $id) return;
+
+                                            $p = Products::find($id);
                                             if ($p) {
-                                                $set('price', (float) $p->sell_price);
+                                                // SET nilai terformat agar langsung muncul titik/koma di UI
+                                                $set('price', number_format((float) $p->sell_price, 2, ',', '.'));
                                                 $set('tax_rate', (float) $p->tax_rate);
+
                                                 if ((int) ($get('qty') ?? 0) === 0) {
                                                     $set('qty', 1);
                                                 }
                                             }
+
                                             $recalcFromInsideItem($get, $set);
                                         }),
                                 ]),
@@ -249,7 +268,7 @@ class SalesForm
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Get $get, Set $set) => $recalcFromInsideItem($get, $set)),
 
-                            // === DISPLAY line_total (IDR) + simpan hidden ===
+                            // DISPLAY line_total (IDR) + simpan hidden
                             Grid::make(1)
                                 ->columnSpan(1)
                                 ->schema([
@@ -267,7 +286,7 @@ class SalesForm
             Section::make('Ringkasan & Pembayaran')
                 ->columns(2)
                 ->schema([
-                    // === DISPLAY subtotal + save hidden ===
+                    // DISPLAY subtotal + hidden
                     Grid::make(1)
                         ->columnSpan(1)
                         ->schema([
@@ -276,7 +295,7 @@ class SalesForm
                             Hidden::make('subtotal')->dehydrated(),
                         ]),
 
-                    // === DISPLAY discount_total + save hidden ===
+                    // DISPLAY discount_total + hidden
                     Grid::make(1)
                         ->columnSpan(1)
                         ->schema([
@@ -285,7 +304,7 @@ class SalesForm
                             Hidden::make('discount_total')->dehydrated(),
                         ]),
 
-                    // === DISPLAY tax_total + save hidden ===
+                    // DISPLAY tax_total + hidden
                     Grid::make(1)
                         ->columnSpan(1)
                         ->schema([
@@ -294,7 +313,7 @@ class SalesForm
                             Hidden::make('tax_total')->dehydrated(),
                         ]),
 
-                    // === DISPLAY grand_total + save hidden ===
+                    // DISPLAY grand_total + hidden
                     Grid::make(1)
                         ->columnSpan(1)
                         ->schema([
@@ -314,7 +333,7 @@ class SalesForm
                     IdrInput::make('paid_total')
                         ->label('Dibayar')
                         ->default(0)
-                        ->live(onBlur:true)
+                        ->live(onBlur: true)
                         ->afterStateUpdated(function (Get $get, Set $set, $state) use ($recalcTotalsRoot) {
                             $recalcTotalsRoot($get, $set);
                         })
@@ -322,13 +341,13 @@ class SalesForm
                             $gt   = (float) ($get('grand_total') ?? 0);
                             $paid = $toNumber($value ?? 0);
                             if ($paid < $gt) {
-                                $fail('Pembayaran (Dibayar) harus ≥ Grand Total (Rp '.number_format($gt, 0, ',', '.').').');
+                                $fail('Pembayaran (Dibayar) harus ≥ Grand Total (Rp ' . number_format($gt, 0, ',', '.') . ').');
                             }
                         })
                         ->helperText('Tidak boleh kurang dari Grand Total')
                         ->columnSpan(1),
 
-                    // === DISPLAY change_due + save hidden ===
+                    // DISPLAY change_due + hidden
                     Grid::make(1)
                         ->columnSpan(1)
                         ->schema([
