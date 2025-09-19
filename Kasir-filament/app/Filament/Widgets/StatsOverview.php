@@ -18,7 +18,7 @@ class StatsOverview extends StatsOverviewWidget
         $prevTotals = $this->monthlyTotals($prev['start'], $prev['end']);
 
         $grossNow = $curTotals['revenue'] - $curTotals['discounts'];
-        $grossPrev = $prevTotals['revenue'] - $curTotals['discounts'];
+        $grossPrev = $prevTotals['revenue'] - $prevTotals['discounts'];
 
         $netNow = ($curTotals['revenue'] - $curTotals['discounts'] - $curTotals['taxes']) - $curTotals['cogs'];
         $netPrev = ($prevTotals['revenue'] - $prevTotals['discounts'] - $prevTotals['taxes']) - $prevTotals['cogs'];
@@ -62,7 +62,7 @@ class StatsOverview extends StatsOverviewWidget
 
             // ===== Total Penjualan Barang (Qty) =====
             Stat::make('Total Penjualan Barang', number_format($itemsNow))
-                ->description($this->deltaText($itemsNow, $itemsPrev, suffix: ''))
+                ->description($this->deltaText($itemsNow, $itemsPrev))
                 ->descriptionIcon($this->deltaIcon($itemsNow, $itemsPrev))
                 ->color($this->deltaColor($itemsNow, $itemsPrev))
                 ->chart($itemsSeries),
