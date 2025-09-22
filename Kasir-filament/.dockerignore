@@ -1,0 +1,17 @@
+# Umum
+.git
+.gitignore
+node_modules
+vendor/**/.git
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+bootstrap/cache/*.php
+
+# Public symlink/storage
+public/storage
+
+# OS/editor junk
+.DS_Store
+*.log
